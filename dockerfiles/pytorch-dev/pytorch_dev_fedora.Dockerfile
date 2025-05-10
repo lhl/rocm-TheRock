@@ -1,5 +1,10 @@
+# https://github.com/scottt/rocm-TheRock/blob/gfx1151/dockerfiles/pytorch-dev/pytorch_dev_fedora.Dockerfile
+
 ARG FEDORA_VER=41
 FROM rocm-dev-f${FEDORA_VER} AS build
+
+ENV AMDGPU_TARGETS=gfx1151
+ENV AOTRITON_BUILD_FROM_SOURCE=1
 
 # pytorch-fetch
 RUN --mount=type=cache,id=pytorch-f${FEDORA_VER},target=/therock \
@@ -9,6 +14,7 @@ RUN --mount=type=cache,id=pytorch-f${FEDORA_VER},target=/therock \
 	--mount=type=bind,target=/therock/src,rw \
 	python3 /therock/src/external-builds/pytorch/ptbuild.py \
 		checkout \
+                --pytorch-ref v2.7.0 \
 		--repo /therock/pytorch \
 		--depth 1 \
 		--jobs 10 \
@@ -24,6 +30,7 @@ RUN --mount=type=cache,id=pytorch-f${FEDORA_VER},target=/therock \
 	--mount=type=bind,target=/therock/src,rw \
 	python3 /therock/src/external-builds/pytorch/ptbuild.py \
 		checkout \
+                --pytorch-ref v2.7.0 \
 		--repo /therock/pytorch  \
 		--depth 1  \
 		--jobs 10
@@ -35,12 +42,31 @@ RUN --mount=type=cache,id=pytorch-f${FEDORA_VER},target=/therock \
 
 ENV CMAKE_PREFIX_PATH=/opt/rocm
 ENV USE_KINETO=OFF
+ENV USE_FBGEMM=0
 ENV PYTORCH_ROCM_ARCH=$AMDGPU_TARGETS
+ENV USE_ROCM_CK=0
+ENV CMAKE_CXX_FLAGS_POST="-Wno-error"
+# Doesn't work?
+ENV NO_WERROR=1
+ENV CMAKE_ARGS="-DUSE_ROCTX=OFF \
+                -DPYTORCH_ROCM_ARCH=${AMDGPU_TARGETS} \
+                -DFBGEMM_WERROR=OFF \
+                -DUSE_ROCM_CK_GEMM=OFF \
+                -DCMAKE_CXX_FLAGS_POST='-Wno-error'"
+
+# fix ROCM_ROCTX_LIB NOTFOUND error
+RUN ln -s /opt/rocm/lib/librocprofiler-sdk-roctx.so /opt/rocm/lib/libroctx64.so
 
 RUN --mount=type=cache,id=pytorch-f${FEDORA_VER},target=/therock \
 	cd /therock/pytorch && \
 	python setup.py build --cmake-only && \
-	pushd build && cmake "-DPYTORCH_ROCM_ARCH=$AMDGPU_TARGETS" . && popd && \
+	pushd build && \
+        cmake \
+          -DPYTORCH_ROCM_ARCH=$AMDGPU_TARGETS \
+          -DUSE_ROCTX=OFF \
+          -DROCM_ROCTX_LIB=/opt/rocm/lib/librocprofiler-sdk-roctx.so \ 
+          . && \
+        popd && \
 	python setup.py bdist_wheel
 
 RUN --mount=type=cache,id=pytorch-f${FEDORA_VER},target=/therock \
